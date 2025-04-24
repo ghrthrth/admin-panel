@@ -15,6 +15,8 @@ type Store = {
   setLoading: (loading: boolean) => void
 }
 
+
+
 const useAppStore = create<Store>()(
   persist(
     set => ({

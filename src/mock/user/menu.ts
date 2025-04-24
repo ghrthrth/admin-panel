@@ -15,6 +15,17 @@ const menuList: MenuList = [
     affix: true,
   },
   {
+    code: 'items',
+    icon: 'dashboard',
+    label: {
+      zh_CN: '首页',
+      en_US: 'items',
+      ru_RU: 'pp'
+    },
+    path: '/api/items',
+    affix: true,
+  },
+  {
     code: 'charts',
     icon: 'charts',
     label: {

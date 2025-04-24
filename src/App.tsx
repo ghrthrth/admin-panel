@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { HashRouter } from 'react-router-dom'
+import { BrowserRouter } from 'react-router-dom'
 import { Spin, ConfigProvider, theme as antTheme } from 'antd'
 import { IntlProvider } from 'react-intl'
 import enUS from 'antd/es/locale/en_US'
@@ -32,7 +32,7 @@ function App() {
       }}
     >
       <IntlProvider locale={locale.split('_')[0]} messages={localeConfig[locale]}>
-        <HashRouter>
+        <BrowserRouter>
           <Suspense fallback={null}>
             <Spin
               className="app-loading-wrapper"
@@ -45,7 +45,7 @@ function App() {
               <RenderRouter />
             </RouteGuard>
           </Suspense>
-        </HashRouter>
+        </BrowserRouter>
       </IntlProvider>
     </ConfigProvider>
   )
