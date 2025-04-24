@@ -15,15 +15,14 @@ const menuList: MenuList = [
     affix: true,
   },
   {
-    code: 'items',
+    code: 'staff',
     icon: 'dashboard',
     label: {
       zh_CN: '首页',
-      en_US: 'items',
-      ru_RU: 'pp'
+      en_US: 'staff',
+      ru_RU: 'Мед.персонал'
     },
-    path: '/api/items',
-    affix: true,
+    path: '/api/staff',
   },
   {
     code: 'charts',
@@ -54,28 +53,6 @@ const menuList: MenuList = [
           ru_RU: 'Линейный график'
         },
         path: '/charts/line',
-      },
-    ],
-  },
-  {
-    code: 'business',
-    icon: 'business',
-    label: {
-      zh_CN: '业务',
-      en_US: 'Business',
-      ru_RU: 'Бизнес'
-    },
-    path: '/business',
-    children: [
-      {
-        code: 'article',
-        icon: 'article',
-        label: {
-          zh_CN: '表格',
-          en_US: 'Table',
-          ru_RU: 'Таблица'
-        },
-        path: '/business/article',
       },
     ],
   },
