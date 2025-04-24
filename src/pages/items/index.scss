@@ -1,14 +1,47 @@
-.items-page {
-  padding: 24px;
-}
 
-.page-header {
+.items-page-container {
+  height: 100vh;
+  overflow: hidden;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
+  flex-direction: column;
 
-.submit-btn {
-  width: 100%;
+  .ant-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+
+    .ant-card-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+
+      .page-header {
+        padding: 16px 24px;
+      }
+
+      .ant-table-wrapper {
+        flex: 1;
+
+        .ant-spin-nested-loading,
+        .ant-spin-container,
+        .ant-table-container {
+          height: 100%;
+        }
+
+        .ant-spin-container {
+          display: flex;
+          flex-direction: column;
+
+          .ant-table {
+            flex: 1;
+          }
+
+          .ant-pagination {
+            padding: 16px;
+          }
+        }
+      }
+    }
+  }
 }

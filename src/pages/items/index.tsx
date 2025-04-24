@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Table, Button, Space, Modal, Form, Input, message, Popconfirm, Card, Typography } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
 import axios from 'axios';
+import './index.scss'; // Импорт SCSS стилей
 
 const { Title } = Typography;
 
@@ -137,7 +138,7 @@ const ItemsPage = () => {
   ];
 
   return (
-    <div className="items-page">
+    <div className="items-page-container"> {/* Добавляем класс контейнера */}
       <Card>
         <div className="page-header">
           <Title level={3}>Items Management</Title>
@@ -165,7 +166,7 @@ const ItemsPage = () => {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 10 }}
-          scroll={{ x: true }}
+          scroll={{ x: 'max-content', y: 'calc(100vh - 250px)' }}
         />
 
         <Modal
