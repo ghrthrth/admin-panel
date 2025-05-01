@@ -11,6 +11,7 @@ import { theme } from 'antd';
 import { Spin } from 'antd';
 import './PatientMonitoring.css';
 import useAppStore from '@/stores/app.ts'
+import { usePatientStore } from '@/stores/patientStore.ts'
 
 const { useToken } = theme;
 
@@ -132,15 +133,25 @@ const PatientMonitoring: React.FC = () => {
 
     if (data.type === "medical_data" && data.clientId) {
       updatePatientData(data);
+      usePatientStore.getState().updatePatients({
+        ...patients,
+        [data.clientId]: {
+          ...patients[data.clientId],
+          ...data
+        }
+      });
     }
 
     if (data.type === "patient_disconnected" && data.clientId) {
       handlePatientDisconnected(data.clientId);
+      const newPatients = { ...patients };
+      delete newPatients[data.clientId];
+      usePatientStore.getState().updatePatients(newPatients);
     }
   };
 
   const updatePatientData = (data: WebSocketMessage) => {
-    const now = new Date().toLocaleString();
+    const now = new Date().toISOString(); // Используем ISO формат для унификации
     const newDataPoint = {
       timestamp: now,
       pressure: data.pressure || { systolic: 0, diastolic: 0 },
@@ -156,17 +167,25 @@ const PatientMonitoring: React.FC = () => {
 
       const updatedHistory = [...(existingPatient.history || []), newDataPoint].slice(-20);
 
+      const updatedPatient = {
+        ...existingPatient,
+        pressure: data.pressure || existingPatient.pressure,
+        bloodSugar: data.bloodSugar ?? existingPatient.bloodSugar,
+        pulse: data.pulse ?? existingPatient.pulse,
+        lastUpdate: now, // Сохраняем в ISO формате
+        disconnected: false,
+        history: updatedHistory
+      };
+
+      // Обновляем хранилище
+      usePatientStore.getState().updatePatients({
+        ...prevPatients,
+        [data.clientId!]: updatedPatient
+      });
+
       return {
         ...prevPatients,
-        [data.clientId!]: {
-          ...existingPatient,
-          pressure: data.pressure || existingPatient.pressure,
-          bloodSugar: data.bloodSugar ?? existingPatient.bloodSugar,
-          pulse: data.pulse ?? existingPatient.pulse,
-          lastUpdate: now,
-          disconnected: false,
-          history: updatedHistory
-        }
+        [data.clientId!]: updatedPatient
       };
     });
   };
