@@ -44,16 +44,6 @@ const menuList: MenuList = [
         },
         path: '/charts/bar',
       },
-      {
-        code: 'line',
-        icon: 'line-chart',
-        label: {
-          zh_CN: '折线图',
-          en_US: 'Line Chart',
-          ru_RU: 'Линейный график'
-        },
-        path: '/charts/line',
-      },
     ],
   },
   {

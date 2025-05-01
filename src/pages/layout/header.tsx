@@ -94,14 +94,6 @@ function HeaderComponent() {
                 key: 'home',
               },
               {
-                label: (
-                  <a href="" target="_blank">
-                    <FormattedMessage id="user.actions.github" />
-                  </a>
-                ),
-                key: 'github',
-              },
-              {
                 label: <FormattedMessage id="user.actions.logout" />,
                 key: 'logout',
               },

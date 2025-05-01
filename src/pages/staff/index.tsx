@@ -4,6 +4,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant
 import axios from 'axios';
 import './index.scss';
 import { useLocale } from '@/locales';
+import type { ColumnsType } from 'antd/es/table';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -101,24 +102,24 @@ const StaffPage = () => {
     admin: 'red'
   };
 
-  const columns = [
+  const columns: ColumnsType<MedicalStaff> = [
     {
       title: formatMessage({ id: 'staff.columns.id' }),
       dataIndex: 'id',
       key: 'id',
-      sorter: (a: MedicalStaff, b: MedicalStaff) => a.id - b.id,
+      sorter: (a, b) => a.id - b.id,
     },
     {
       title: formatMessage({ id: 'staff.columns.firstName' }),
       dataIndex: 'first_name',
       key: 'first_name',
-      sorter: (a: MedicalStaff, b: MedicalStaff) => a.first_name.localeCompare(b.first_name),
+      sorter: (a, b) => a.first_name.localeCompare(b.first_name),
     },
     {
       title: formatMessage({ id: 'staff.columns.lastName' }),
       dataIndex: 'last_name',
       key: 'last_name',
-      sorter: (a: MedicalStaff, b: MedicalStaff) => a.last_name.localeCompare(b.last_name),
+      sorter: (a, b) => a.last_name.localeCompare(b.last_name),
     },
     {
       title: formatMessage({ id: 'staff.columns.email' }),
@@ -139,7 +140,10 @@ const StaffPage = () => {
         { text: formatMessage({ id: 'staff.roles.nurse' }), value: 'nurse' },
         { text: formatMessage({ id: 'staff.roles.admin' }), value: 'admin' },
       ],
-      onFilter: (value: string, record: MedicalStaff) => record.role === value,
+      onFilter: (value: React.Key | boolean, record: MedicalStaff) => {
+        // Приводим value к строке, так как наши значения фильтров - строки
+        return record.role === String(value);
+      },
     },
     {
       title: formatMessage({ id: 'staff.columns.specialization' }),
@@ -158,8 +162,7 @@ const StaffPage = () => {
       dataIndex: 'created_at',
       key: 'created_at',
       render: (text: string) => new Date(text).toLocaleString(),
-      sorter: (a: MedicalStaff, b: MedicalStaff) =>
-        new Date(a.created_at || '').getTime() - new Date(b.created_at || '').getTime(),
+      sorter: (a, b) => new Date(a.created_at || '').getTime() - new Date(b.created_at || '').getTime(),
     },
     {
       title: formatMessage({ id: 'staff.columns.actions' }),
@@ -184,7 +187,6 @@ const StaffPage = () => {
     },
   ];
 
-  // @ts-ignore
   return (
     <div className="staff-page-container">
       <Card>
@@ -208,7 +210,7 @@ const StaffPage = () => {
           </Space>
         </div>
 
-        <Table
+        <Table<MedicalStaff>
           columns={columns}
           dataSource={filteredStaff}
           rowKey="id"

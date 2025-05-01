@@ -10,6 +10,10 @@ export default defineConfig({
       '@': '/src',
     },
   },
+  server: {
+    host: '0.0.0.0',  // слушать все интерфейсы (включая внешний IP)
+    port: 3002,       // можно указать нужный порт (по умолчанию 5173)
+  },
   plugins: [
     react({
       jsxImportSource: '@emotion/react',

@@ -7,7 +7,6 @@ import type { RouteObject } from 'react-router-dom'
 
 const Dashboard = lazy(() => import('../pages/dashboard'))
 const BarPage = lazy(() => import('../pages/charts/bar'))
-const LinePage = lazy(() => import('../pages/charts/line'))
 const StaffPage = lazy(() => import('../pages/staff'))
 const ArticlePage = lazy(() => import('../pages/business/article'))
 const JSONEditorPage = lazy(() => import('../pages/components-demo/json-editor'))
@@ -34,10 +33,6 @@ const routeList: RouteObject[] = [
       {
         path: '/charts/bar',
         element: <BarPage />,
-      },
-      {
-        path: '/charts/line',
-        element: <LinePage />,
       },
       {
         path: '/business/article',
