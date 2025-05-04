@@ -8,10 +8,14 @@ type Store = {
   menuList: MenuList
   setMenuList: (menuList: MenuList) => void
   setUserInfo: (userInfo: LoginResult) => void
+  role: string;
   clear: () => void
 }
 
+
+
 const useUserStore = create<Store>()(
+
   persist(
     set => ({
       userInfo: undefined,

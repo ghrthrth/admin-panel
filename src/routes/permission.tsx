@@ -1,41 +1,25 @@
-import { useEffect } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
-import useUserStore from '@/stores/user'
-import type { FC, ReactElement } from 'react'
+import { useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import useUserStore from '@/stores/user';
+import type { FC, ReactElement } from 'react';
 
 interface RouteGuardProps {
-  title?: string
-  children?: React.ReactNode
+  children?: React.ReactNode;
 }
 
-const RouteGuard: FC<RouteGuardProps> = props => {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const userInfo = useUserStore(state => state.userInfo)
-
-  const element = props.children
-  const isLogged = !!userInfo
-  const { pathname } = location
+const RouteGuard: FC<RouteGuardProps> = ({ children }) => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const userInfo = useUserStore(state => state.userInfo);
 
   useEffect(() => {
-    if (!isLogged) {
-      if (pathname !== '/login') {
-        navigate('/login', { replace: true })
-      }
-    } else if (pathname === '/login') {
-      navigate('/', { replace: true })
+    // Только запрещаем доступ к защищенным роутам
+    if (!userInfo && location.pathname !== '/login') {
+      navigate('/login', { replace: true });
     }
-  }, [pathname])
+  }, [userInfo, location.pathname]);
 
-  if (isLogged) {
-    if (pathname === '/login') {
-      return null
-    } else {
-      return element as ReactElement
-    }
-  } else {
-    return pathname === '/login' ? (element as ReactElement) : null
-  }
-}
+  return children as ReactElement;
+};
 
-export default RouteGuard
+export default RouteGuard;

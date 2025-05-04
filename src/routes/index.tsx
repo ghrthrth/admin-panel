@@ -1,13 +1,14 @@
+import type { FC } from 'react'
 import { lazy } from 'react'
-import { useRoutes, Navigate } from 'react-router-dom'
+import type { RouteObject } from 'react-router-dom'
+import { Navigate, useRoutes } from 'react-router-dom'
 import Login from '../pages/login'
 import LayoutPage from '../pages/layout'
-import type { FC } from 'react'
-import type { RouteObject } from 'react-router-dom'
 
 const Dashboard = lazy(() => import('../pages/dashboard'))
 const BarPage = lazy(() => import('../pages/charts/bar'))
 const StaffPage = lazy(() => import('../pages/staff'))
+const PacientsPage = lazy(() => import('../pages/pacients')) // Добавляем новый компонент
 const ArticlePage = lazy(() => import('../pages/business/article'))
 const JSONEditorPage = lazy(() => import('../pages/components-demo/json-editor'))
 const NotFound = lazy(() => import('../pages/error/404'))
@@ -39,8 +40,12 @@ const routeList: RouteObject[] = [
         element: <ArticlePage />,
       },
       {
-        path: '/api/staff/',
+        path: '/api/staff',
         element: <StaffPage />,
+      },
+      {
+        path: '/pacients', // Добавляем новый роут
+        element: <PacientsPage />,
       },
       {
         path: '/components/json-editor',
@@ -63,8 +68,7 @@ const routeList: RouteObject[] = [
 ]
 
 const RenderRouter: FC = () => {
-  const element = useRoutes(routeList)
-  return element
+  return useRoutes(routeList)
 }
 
 export default RenderRouter

@@ -30,8 +30,6 @@ axiosInstance.interceptors.response.use(
   },
   error => {
     setLoading(false)
-    // if needs to navigate to login page when request exception
-    // history.replace('/login');
     let errorMessage = '系统异常'
 
     if (error?.message?.includes('Network Error')) {
@@ -52,6 +50,7 @@ axiosInstance.interceptors.response.use(
 )
 
 export type Response<T> = {
+  error: string
   code: number
   msg: string
   result: T
