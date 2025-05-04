@@ -1,8 +1,8 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
-const nodemailer = require('nodemailer'); // Для отправки email
-const crypto = require('crypto'); // Для генерации пароля
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 
 const app = express();
 
@@ -36,15 +36,16 @@ const transporter = nodemailer.createTransport({
   tls: {
     rejectUnauthorized: false
   },
-  connectionTimeout: 10000, // 10 секунд
-  greetingTimeout: 10000   // 10 секунд
+  connectionTimeout: 10000,
+  greetingTimeout: 10000
 });
 
 // Функция для генерации случайного пароля
 function generatePassword(length = 10) {
   return crypto.randomBytes(length).toString('hex').slice(0, length);
 }
-// Функция для генерации логина на основе имени и фамилии
+
+// Функция для генерации логина
 function generateLogin(firstName, lastName) {
   const cleanFirstName = firstName.toLowerCase().replace(/\s+/g, '');
   const cleanLastName = lastName.toLowerCase().replace(/\s+/g, '');
@@ -57,8 +58,8 @@ async function initializeDatabase() {
     // Создаем таблицу медицинского персонала
     await pool.query(`
       CREATE TABLE IF NOT EXISTS medical_staff (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        first_name VARCHAR(50) NOT NULL,
+                                                 id INT AUTO_INCREMENT PRIMARY KEY,
+                                                 first_name VARCHAR(50) NOT NULL,
         last_name VARCHAR(50) NOT NULL,
         email VARCHAR(100) UNIQUE NOT NULL,
         role ENUM('doctor', 'nurse', 'admin') NOT NULL,
@@ -66,20 +67,42 @@ async function initializeDatabase() {
         department VARCHAR(100),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-      )
+        )
     `);
 
     // Создаем таблицу для учетных данных
     await pool.query(`
       CREATE TABLE IF NOT EXISTS staff_credentials (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        staff_id INT NOT NULL,
-        login VARCHAR(100) UNIQUE NOT NULL,
+                                                     id INT AUTO_INCREMENT PRIMARY KEY,
+                                                     staff_id INT NOT NULL,
+                                                     login VARCHAR(100) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (staff_id) REFERENCES medical_staff(id) ON DELETE CASCADE
-      )
+        )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS patients (
+                                            id INT AUTO_INCREMENT PRIMARY KEY,
+                                            first_name VARCHAR(50) NOT NULL,
+        last_name VARCHAR(50) NOT NULL,
+        dob DATE NOT NULL,
+        gender ENUM('male', 'female', 'other') NOT NULL,
+        address VARCHAR(255),
+        phone VARCHAR(20),
+        email VARCHAR(100),
+        insurance_number VARCHAR(50),
+        diagnosis TEXT,
+        admission_date DATETIME NOT NULL,
+        discharge_date DATETIME,
+        ward_number VARCHAR(20),
+        department VARCHAR(100),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
     `);
 
     console.log('Database tables created/updated successfully');
@@ -121,12 +144,11 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { login, password } = req.body;
 
-    // Ищем пользователя по логину
     const [users] = await pool.query(
-      `SELECT s.id, s.first_name, s.last_name, s.email, s.role, 
-              c.login, c.password 
+      `SELECT s.id, s.first_name, s.last_name, s.email, s.role,
+              c.login, c.password
        FROM medical_staff s
-       JOIN staff_credentials c ON s.id = c.staff_id
+              JOIN staff_credentials c ON s.id = c.staff_id
        WHERE c.login = ?`,
       [login]
     );
@@ -136,14 +158,11 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const user = users[0];
-
-    // Проверяем пароль (хешированный)
     const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
     if (hashedPassword !== user.password) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Формируем ответ без пароля
     const { password: _, ...userData } = user;
 
     res.json({
@@ -157,49 +176,41 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Добавить нового сотрудника с генерацией учетных данных
+// Добавить нового сотрудника
 app.post('/api/staff', async (req, res) => {
   try {
     const { first_name, last_name, email, role, specialization, department } = req.body;
 
-    // Начинаем транзакцию
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
-      // Вставляем данные сотрудника
       const [result] = await connection.query(
         'INSERT INTO medical_staff (first_name, last_name, email, role, specialization, department) VALUES (?, ?, ?, ?, ?, ?)',
         [first_name, last_name, email, role, specialization, department]
       );
 
-      // Генерируем учетные данные
       const login = generateLogin(first_name, last_name);
       const password = generatePassword();
 
-      // Вставляем учетные данные
       await connection.query(
         'INSERT INTO staff_credentials (staff_id, login, password) VALUES (?, ?, ?)',
         [result.insertId, login, crypto.createHash('sha256').update(password).digest('hex')]
       );
 
-      // Получаем данные нового сотрудника
       const [newStaff] = await connection.query(
         'SELECT id, first_name, last_name, email, role, specialization, department, created_at FROM medical_staff WHERE id = ?',
         [result.insertId]
       );
 
-      // Фиксируем транзакцию
       await connection.commit();
       connection.release();
 
-      // Отправляем email с учетными данными (не блокируем ответ)
       sendCredentialsEmail(email, login, password)
         .catch(err => console.error('Failed to send email:', err));
 
       res.status(201).json(newStaff[0]);
     } catch (err) {
-      // Откатываем транзакцию при ошибке
       await connection.rollback();
       connection.release();
       throw err;
@@ -279,6 +290,95 @@ app.delete('/api/staff/:id', async (req, res) => {
   try {
     await pool.query('DELETE FROM medical_staff WHERE id = ?', [req.params.id]);
     res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// CRUD Endpoints для пациентов
+
+// GET /api/patients
+app.get('/api/patients', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM patients');
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// GET /api/patients/:id
+app.get('/api/patients/:id', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM patients WHERE id = ?', [req.params.id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// POST /api/patients
+app.post('/api/patients', async (req, res) => {
+  try {
+    const { first_name, last_name, dob, diagnosis, ward_number, department } = req.body;
+    const [result] = await pool.query(
+      `INSERT INTO patients (
+        first_name, last_name, dob, diagnosis,
+        ward_number, department
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+      [first_name, last_name, dob, diagnosis, ward_number, department]
+    );
+    const [newPatient] = await pool.query('SELECT * FROM patients WHERE id = ?', [result.insertId]);
+    res.status(201).json(newPatient[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// PUT /api/patients/:id
+app.put('/api/patients/:id', async (req, res) => {
+  try {
+    const { first_name, last_name, dob, diagnosis, ward_number, department } = req.body;
+    await pool.query(
+      `UPDATE patients SET
+                         first_name = ?,
+                         last_name = ?,
+                         dob = ?,
+                         diagnosis = ?,
+                         ward_number = ?,
+                         department = ?
+       WHERE id = ?`,
+      [first_name, last_name, dob, diagnosis, ward_number, department, req.params.id]
+    );
+    const [updatedPatient] = await pool.query('SELECT * FROM patients WHERE id = ?', [req.params.id]);
+    res.json(updatedPatient[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// GET /api/patients/search
+app.get('/api/patients/search', async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query || query.length < 2) {
+      return res.status(400).json({ error: 'Search query must be at least 2 characters long' });
+    }
+    const searchQuery = `%${query}%`;
+    const [rows] = await pool.query(
+      `SELECT * FROM patients
+       WHERE first_name LIKE ? OR last_name LIKE ? OR insurance_number LIKE ?`,
+      [searchQuery, searchQuery, searchQuery]
+    );
+    res.json(rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Database error' });

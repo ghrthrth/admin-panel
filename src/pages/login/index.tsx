@@ -12,8 +12,8 @@ const { useToken } = theme;
 
 // Добавляем initialValues
 const initialValues: LoginParams = {
-  login: '',
-  password: ''
+  login: 'admin',
+  password: 'admin'
 };
 
 const Login = () => {
@@ -25,11 +25,32 @@ const Login = () => {
   const [messageApi, contextHolder] = message.useMessage();
   const { token } = useToken(); // Добавляем использование токена
 
-// В файле login.tsx
   const handleLogin = async () => {
     try {
       setLoading(true);
       const values = await form.validateFields();
+
+      // Проверка на статического администратора
+      if (values.login === 'admin' && values.password === 'admin123') {
+        setUserInfo({
+          id: 1,
+          name: 'Admin',
+          role: 'admin',
+          // Добавьте другие необходимые поля
+        });
+
+        messageApi.open({
+          type: 'success',
+          content: 'Вход выполнен успешно!',
+          duration: 2,
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        navigate('/', { replace: true });
+        return;
+      }
+
+      // Обычный вход через API
       const res = await login(values);
 
       if (res.data?.code === 200) {
