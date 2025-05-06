@@ -43,12 +43,10 @@ const PatientsPage = () => {
     try {
       let response;
       if (editingPatient) {
-        // Редактирование
         // @ts-ignore
         response = await axios.put(`http://localhost:8001/api/patients/${editingPatient.id}`, payload);
         message.success('Пациент обновлен');
       } else {
-        // Добавление
         response = await axios.post('http://localhost:8001/api/patients', payload);
         message.success(`Пациент добавлен. Код приглашения: ${response.data.invitation_code}`);
       }
@@ -87,16 +85,38 @@ const PatientsPage = () => {
   ];
 
   return (
-    <Card title="Пациенты" extra={
-      <Button type="primary" onClick={() => {
-        form.resetFields();
-        setEditingPatient(null);
-        setModalVisible(true);
+    <Card
+      title="Пациенты"
+      extra={
+        <Button type="primary" onClick={() => {
+          form.resetFields();
+          setEditingPatient(null);
+          setModalVisible(true);
+        }}>
+          Добавить пациента
+        </Button>
+      }
+      style={{
+        maxWidth: '100%',
+        overflow: 'hidden',
+      }}
+    >
+      <div style={{
+        overflowX: 'auto',
+        overflowY: 'auto',  // Добавляем вертикальную прокрутку
+        width: '100%',
+        maxHeight: '70vh',  // Ограничиваем высоту (можно настроить)
+        maxWidth: 'calc(100vw - 32px)',
       }}>
-        Добавить пациента
-      </Button>
-    }>
-      <Table dataSource={data} columns={columns} rowKey="id" />
+        <Table
+          dataSource={data}
+          columns={columns}
+          rowKey="id"
+          style={{ minWidth: '800px' }}
+          scroll={{ x: 'max-content', y: 'calc(70vh - 100px)' }}  // Прокрутка внутри таблицы
+          pagination={{ pageSize: 10 }}  // Добавляем пагинацию (опционально)
+        />
+      </div>
 
       <Modal
         title={editingPatient ? "Редактировать пациента" : "Добавить пациента"}

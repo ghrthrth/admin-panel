@@ -298,6 +298,81 @@ app.delete('/api/staff/:id', async (req, res) => {
 
 // CRUD Endpoints для пациентов
 
+
+app.get('/api/patients/verify', async (req, res) => {
+  try {
+    const { code } = req.query;
+
+    // Улучшенное логирование
+    console.log(`[${new Date().toISOString()}] Verification request for code:`, code);
+
+    // Проверка кода приглашения
+    if (!code || typeof code !== 'string' || code.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid invite code format (minimum 6 characters required)'
+      });
+    }
+
+    // Запрос к базе с защитой от SQL-инъекций
+    const [patients] = await pool.query(
+      `SELECT 
+        id,
+        first_name,
+        last_name,
+        dob,
+        diagnosis,
+        ward_number,
+        department,
+        invitation_code
+       FROM patients 
+       WHERE invitation_code = ? 
+       LIMIT 1`,
+      [code]
+    );
+
+    if (patients.length === 0) {
+      console.log(`[${new Date().toISOString()}] Invalid code attempt:`, code);
+      return res.status(404).json({
+        success: false,
+        error: 'Invalid invitation code or patient not found'
+      });
+    }
+
+    const patient = patients[0];
+
+    // Форматирование ответа
+    const response = {
+      success: true,
+      message: 'Patient verified successfully',
+      patientId: patient.id,
+      patient: {
+        id: patient.id,
+        first_name: patient.first_name,
+        last_name: patient.last_name,
+        dob: patient.dob, // Можно форматировать дату при необходимости
+        diagnosis: patient.diagnosis,
+        ward_number: patient.ward_number,
+        department: patient.department,
+        invitation_code: patient.invitation_code
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    console.log(`[${new Date().toISOString()}] Successful verification for patient ID:`, patient.id);
+    res.json(response);
+
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] Verification error:`, err);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+
 // GET /api/patients
 app.get('/api/patients', async (req, res) => {
   try {
@@ -314,7 +389,7 @@ app.get('/api/patients/:id', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT * FROM patients WHERE id = ?', [req.params.id]);
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Patient not found' });
+      return res.status(404).json({ error: 'Patient not found!!!!!!!' });
     }
     res.json(rows[0]);
   } catch (err) {
@@ -365,25 +440,71 @@ app.put('/api/patients/:id', async (req, res) => {
   }
 });
 
+// В server.js
+
 // GET /api/patients/search
 app.get('/api/patients/search', async (req, res) => {
   try {
     const { query } = req.query;
-    if (!query || query.length < 2) {
-      return res.status(400).json({ error: 'Search query must be at least 2 characters long' });
+
+    // Валидация запроса
+    if (!query || query.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Search query must be at least 2 characters long'
+      });
     }
+
     const searchQuery = `%${query}%`;
-    const [rows] = await pool.query(
-      `SELECT * FROM patients
-       WHERE first_name LIKE ? OR last_name LIKE ? OR insurance_number LIKE ?`,
+
+    // Ищем пациентов по имени, фамилии или номеру страховки
+    const [patients] = await pool.query(
+      `SELECT
+         id,
+         first_name,
+         last_name,
+         dob,
+         diagnosis,
+         ward_number,
+         department,
+         insurance_number,
+         invitation_code
+       FROM patients
+       WHERE
+         first_name LIKE ? OR
+         last_name LIKE ? OR
+         insurance_number LIKE ?
+         LIMIT 50`, // Ограничиваем результаты для производительности
       [searchQuery, searchQuery, searchQuery]
     );
-    res.json(rows);
+
+    // Форматируем дату рождения (если нужно)
+    const formattedPatients = patients.map(patient => ({
+      ...patient,
+      dob: formatDate(patient.dob) // Например, 'YYYY-MM-DD' → 'DD.MM.YYYY'
+    }));
+
+    res.json({
+      success: true,
+      count: formattedPatients.length,
+      patients: formattedPatients
+    });
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database error' });
+    console.error('Search error:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
   }
 });
+
+// Вспомогательная функция для форматирования даты
+function formatDate(dateString) {
+  if (!dateString) return null;
+  const date = new Date(dateString);
+  return date.toLocaleDateString('ru-RU'); // Формат DD.MM.YYYY
+}
 
 const PORT = 8001;
 const server = app.listen(PORT, () => {

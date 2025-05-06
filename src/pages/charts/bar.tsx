@@ -16,7 +16,7 @@ import { usePatientStore } from '@/stores/patientStore.ts'
 const { useToken } = theme;
 
 interface PatientData {
-  clientId: string;
+  patientId: string;  // Changed from clientId to patientId
   pressure?: {
     systolic: number;
     diastolic: number;
@@ -40,7 +40,7 @@ interface MedicalDataPoint {
 
 interface WebSocketMessage {
   type: string;
-  clientId?: string;
+  patientId: string;  // Changed from any to string
   status?: string;
   error?: string;
   pressure?: {
@@ -131,27 +131,29 @@ const PatientMonitoring: React.FC = () => {
     if (data.status === "connected") return;
     if (data.status === "error") return console.error("Ошибка:", data.error);
 
-    if (data.type === "medical_data" && data.clientId) {
+    // Changed from data.clientId to data.patientId to match Unity client
+    if (data.type === "medical_data" && data.patientId) {
       updatePatientData(data);
       usePatientStore.getState().updatePatients({
         ...patients,
-        [data.clientId]: {
-          ...patients[data.clientId],
+        [data.patientId]: {
+          ...patients[data.patientId],
           ...data
         }
       });
     }
 
-    if (data.type === "patient_disconnected" && data.clientId) {
-      handlePatientDisconnected(data.clientId);
+    // Changed from data.clientId to data.patientId
+    if (data.type === "patient_disconnected" && data.patientId) {
+      handlePatientDisconnected(data.patientId);
       const newPatients = { ...patients };
-      delete newPatients[data.clientId];
+      delete newPatients[data.patientId];
       usePatientStore.getState().updatePatients(newPatients);
     }
   };
 
   const updatePatientData = (data: WebSocketMessage) => {
-    const now = new Date().toISOString(); // Используем ISO формат для унификации
+    const now = new Date().toISOString();
     const newDataPoint = {
       timestamp: now,
       pressure: data.pressure || { systolic: 0, diastolic: 0 },
@@ -160,8 +162,9 @@ const PatientMonitoring: React.FC = () => {
     };
 
     setPatients(prevPatients => {
-      const existingPatient = prevPatients[data.clientId!] || {
-        clientId: data.clientId!,
+      // Changed from data.clientId to data.patientId
+      const existingPatient = prevPatients[data.patientId!] || {
+        patientId: data.patientId!, // Changed from clientId to patientId
         history: []
       };
 
@@ -172,29 +175,29 @@ const PatientMonitoring: React.FC = () => {
         pressure: data.pressure || existingPatient.pressure,
         bloodSugar: data.bloodSugar ?? existingPatient.bloodSugar,
         pulse: data.pulse ?? existingPatient.pulse,
-        lastUpdate: now, // Сохраняем в ISO формате
+        lastUpdate: now,
         disconnected: false,
         history: updatedHistory
       };
 
-      // Обновляем хранилище
+      // Changed from data.clientId to data.patientId
       usePatientStore.getState().updatePatients({
         ...prevPatients,
-        [data.clientId!]: updatedPatient
+        [data.patientId!]: updatedPatient
       });
 
       return {
         ...prevPatients,
-        [data.clientId!]: updatedPatient
+        [data.patientId!]: updatedPatient
       };
     });
   };
 
-  const handlePatientDisconnected = (clientId: string) => {
+  const handlePatientDisconnected = (patientId: string) => {
     setPatients(prevPatients => ({
       ...prevPatients,
-      [clientId]: {
-        ...prevPatients[clientId],
+      [patientId]: {
+        ...prevPatients[patientId],
         disconnected: true
       }
     }));
@@ -202,8 +205,8 @@ const PatientMonitoring: React.FC = () => {
     setTimeout(() => {
       setPatients(prevPatients => {
         const newPatients = { ...prevPatients };
-        delete newPatients[clientId];
-        if (selectedPatient === clientId) setSelectedPatient(null);
+        delete newPatients[patientId];
+        if (selectedPatient === patientId) setSelectedPatient(null);
         return newPatients;
       });
     }, 5000);
@@ -255,19 +258,19 @@ const PatientMonitoring: React.FC = () => {
             <div className="patients-list-scroll">
               {Object.values(patients).map(patient => (
                 <div
-                  key={patient.clientId}
+                  key={patient.patientId}
                   className="patient-card"
                   style={{
                     backgroundColor: token.colorBgContainer,
                     borderLeft: `4px solid ${patient.disconnected ? token.colorError : token.colorSuccess}`,
-                    border: selectedPatient === patient.clientId
+                    border: selectedPatient === patient.patientId
                       ? `2px solid ${token.colorPrimary}`
                       : `1px solid ${token.colorBorder}`,
                     margin: '8px 16px'
                   }}
-                  onClick={() => setSelectedPatient(patient.clientId)}
+                  onClick={() => setSelectedPatient(patient.patientId)}
                 >
-                  <h3 style={{ color: token.colorText }}>Пациент ID: {patient.clientId}</h3>
+                  <h3 style={{ color: token.colorText }}>Пациент ID: {patient.patientId}</h3>
                   <div className="patient-summary" style={{ color: token.colorTextSecondary }}>
                     <div>Давление: {patient.pressure ? `${patient.pressure.systolic}/${patient.pressure.diastolic}` : '--/--'}</div>
                     <div>Пульс: {patient.pulse || '--'} bpm</div>

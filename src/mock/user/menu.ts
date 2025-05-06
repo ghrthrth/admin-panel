@@ -123,7 +123,7 @@ const getMenuListBasedOnRole = (role: string): MenuList => {
   return baseMenu;
 };
 
-Mock.mock('/api/layout/menu', 'get', (options: any) => {
+Mock.mock('/api/layout/menu', 'get', () => {
   const userData = localStorage.getItem('user-info');
   let role = 'guest';
 

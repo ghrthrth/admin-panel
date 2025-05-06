@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Row, Col, Statistic, theme, Spin, Empty } from 'antd';
+import { Card, Row, Col, Statistic, theme, Spin, Empty, Tag, notification } from 'antd';
 import { ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
 import Chart from './chart';
 import './Dashboard.css';
@@ -7,7 +7,7 @@ import './Dashboard.css';
 const { useToken } = theme;
 
 interface PatientData {
-  clientId: string;
+  patientId: string;
   pressure?: {
     systolic: number;
     diastolic: number;
@@ -15,6 +15,7 @@ interface PatientData {
   bloodSugar?: number;
   pulse?: number;
   lastUpdate?: string;
+  disconnected?: boolean;
 }
 
 const Dashboard: React.FC = () => {
@@ -24,17 +25,17 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   // Статистика, вычисляемая на основе patients
-  const totalPatients = Object.keys(patients).length;
-  const newToday = 0; // Можно реализовать логику подсчёта новых за сегодня
-  const criticalCases = Object.values(patients).filter(p =>
+  const activePatients = Object.values(patients).filter(p => !p.disconnected);
+  const totalPatients = activePatients.length;
+  const newToday = 0;
+  const criticalCases = activePatients.filter(p =>
     (p.pulse && (p.pulse > 120 || p.pulse < 50)) ||
     (p.bloodSugar !== undefined && (p.bloodSugar > 10 || p.bloodSugar < 3.5)) ||
     (p.pressure && (p.pressure.systolic > 140 || p.pressure.diastolic > 90))
   ).length;
 
-  const averagePulse = Object.values(patients).reduce((acc, p) => acc + (p.pulse || 0), 0) / totalPatients || 0;
+  const averagePulse = activePatients.reduce((acc, p) => acc + (p.pulse || 0), 0) / totalPatients || 0;
 
-  // Для демонстрации изменений (можно удалить или реализовать логику)
   const [changes] = useState({
     total: 0,
     new: 0,
@@ -49,8 +50,6 @@ const Dashboard: React.FC = () => {
       setSocketStatus('connected');
       setLoading(false);
       console.log('WebSocket connected');
-
-      // Ключевое изменение - отправляем тип клиента
       socket.send(JSON.stringify({
         type: "monitor_init",
         clientType: "dashboard"
@@ -62,23 +61,55 @@ const Dashboard: React.FC = () => {
         const data = JSON.parse(event.data);
         console.log('Dashboard received:', data);
 
-        if (data.type === "medical_data" && data.clientId) {
+        // Обработка медицинских данных
+        if (data.type === "medical_data" && (data.patientId || data.clientId)) {
+          const patientId = data.patientId || data.clientId; // Поддержка обоих полей
           setPatients(prev => ({
             ...prev,
-            [data.clientId]: {
-              ...prev[data.clientId],
+            [patientId]: {
+              ...prev[patientId],
               ...data,
-              lastUpdate: new Date().toISOString()
+              patientId, // Убедимся, что patientId установлен
+              lastUpdate: new Date().toISOString(),
+              disconnected: false
             }
           }));
         }
 
-        if (data.type === "patient_disconnected" && data.clientId) {
-          setPatients(prev => {
-            const updated = {...prev};
-            delete updated[data.clientId];
-            return updated;
+        // Обработка отключения пациента
+        if (data.type === "patient_disconnected" && (data.patientId || data.clientId)) {
+          const patientId = data.patientId || data.clientId; // Поддержка обоих полей
+
+          // Показываем уведомление
+          notification.warning({
+            message: `Пациент ${patientId} отключается`,
+            description: 'Пациент будет удален через 5 секунд',
+            duration: 3
           });
+
+          // Сначала помечаем пациента как отключенного
+          setPatients(prev => {
+            if (!prev[patientId]) return prev;
+
+            return {
+              ...prev,
+              [patientId]: {
+                ...prev[patientId],
+                disconnected: true
+              }
+            };
+          });
+
+          // Затем удаляем через 5 секунд
+          setTimeout(() => {
+            setPatients(prev => {
+              if (!prev[patientId]) return prev;
+
+              const { [patientId]: _, ...rest } = prev;
+              console.log(`Patient ${patientId} removed from dashboard`);
+              return rest;
+            });
+          }, 5000);
         }
       } catch (error) {
         console.error('Error parsing message:', error);
@@ -115,8 +146,8 @@ const Dashboard: React.FC = () => {
     { title: 'Средний пульс', value: Math.round(averagePulse), change: changes.pulse }
   ];
 
-  const chartData = Object.values(patients).map(patient => ({
-    name: patient.clientId,
+  const chartData = activePatients.map(patient => ({
+    name: patient.patientId,
     pulse: patient.pulse,
     pressure: patient.pressure ? (patient.pressure.systolic + patient.pressure.diastolic) / 2 : 0,
     sugar: patient.bloodSugar
@@ -130,8 +161,8 @@ const Dashboard: React.FC = () => {
     );
   }
 
-  if (Object.values(patients).length === 0) {
-    return <Empty description="Нет данных о пациентах" />;
+  if (activePatients.length === 0) {
+    return <Empty description="Нет активных пациентов" />;
   }
 
   return (
@@ -206,9 +237,17 @@ const Dashboard: React.FC = () => {
                 >
                   <div className="patient-measurements">
                     {Object.values(patients).slice(0, 5).map(patient => (
-                      <div key={patient.clientId} className="measurement-item"
-                           style={{ borderBottom: `1px solid ${token.colorBorder}` }}>
-                        <h4 style={{ color: token.colorText }}>Пациент {patient.clientId}</h4>
+                      <div key={patient.patientId} className="measurement-item"
+                           style={{
+                             borderBottom: `1px solid ${token.colorBorder}`,
+                             opacity: patient.disconnected ? 0.6 : 1
+                           }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <h4 style={{ color: token.colorText }}>Пациент {patient.patientId}</h4>
+                          {patient.disconnected && (
+                            <Tag color="red">Отключен</Tag>
+                          )}
+                        </div>
                         <div style={{ color: token.colorTextSecondary }}>
                           <p>Давление: {patient.pressure ?
                             `${patient.pressure.systolic}/${patient.pressure.diastolic}` : '--/--'}</p>
@@ -236,15 +275,21 @@ const Dashboard: React.FC = () => {
                         (patient.pressure && (patient.pressure.systolic > 140 || patient.pressure.diastolic > 90))
                       )
                       .map(patient => (
-                        <div key={patient.clientId} className="alert-item"
+                        <div key={patient.patientId} className="alert-item"
                              style={{
                                color: token.colorError,
                                marginBottom: 8,
                                backgroundColor: token.colorErrorBg,
                                padding: 8,
-                               borderRadius: 4
+                               borderRadius: 4,
+                               opacity: patient.disconnected ? 0.7 : 1
                              }}>
-                          <strong>Пациент {patient.clientId}</strong>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <strong>Пациент {patient.patientId}</strong>
+                            {patient.disconnected && (
+                              <Tag color="red">Отключен</Tag>
+                            )}
+                          </div>
                           {patient.pulse && (patient.pulse > 120 || patient.pulse < 50) &&
                             <div>⚠️ Аномальный пульс: {patient.pulse} bpm (норма: 50-120)</div>}
                           {patient.bloodSugar !== undefined && (patient.bloodSugar > 10 || patient.bloodSugar < 3.5) &&
