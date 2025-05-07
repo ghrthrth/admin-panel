@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   BarChart, Bar,
   LineChart, Line,
@@ -118,39 +118,63 @@ const PatientMonitoring: React.FC = () => {
     };
 
     ws.current.onmessage = (event) => {
-      try {
-        const data: WebSocketMessage = JSON.parse(event.data);
-        handleWebSocketMessage(data);
-      } catch (e) {
-        console.error("Ошибка обработки сообщения:", e);
+      console.log('Received:', event.data);
+      const data = JSON.parse(event.data);
+
+      // Унифицируем поле ID (поддерживаем и patientId, и clientId)
+      const patientId = data.patientId || data.clientId;
+
+      if (data.type === "medical_data" && patientId) {
+        const now = new Date().toISOString();
+        const newDataPoint = {
+          timestamp: now,
+          pressure: data.pressure || { systolic: 0, diastolic: 0 },
+          bloodSugar: data.bloodSugar || 0,
+          pulse: data.pulse || 0
+        };
+
+        setPatients(prev => {
+          const existing = prev[patientId] || { patientId, history: [] };
+          const updatedHistory = [...(existing.history || []), newDataPoint].slice(-20);
+
+          return {
+            ...prev,
+            [patientId]: {
+              ...existing,
+              ...data,
+              lastUpdate: now,
+              history: updatedHistory,
+              disconnected: false
+            }
+          };
+        });
+      }
+
+      if (data.type === "patient_disconnected" && patientId) {
+        // 1. Пометить как отключенного
+        setPatients(prev => ({
+          ...prev,
+          [patientId]: {
+            ...prev[patientId],
+            disconnected: true
+          }
+        }));
+
+        // 2. Удалить через 5 секунд
+        setTimeout(() => {
+          setPatients(prev => {
+            const { [patientId]: _, ...rest } = prev;
+            // Сбросить выбор если удаляем выбранного пациента
+            if (selectedPatient === patientId) {
+              setSelectedPatient(null);
+            }
+            return rest;
+          });
+        }, 5000);
       }
     };
   };
 
-  const handleWebSocketMessage = (data: WebSocketMessage) => {
-    if (data.status === "connected") return;
-    if (data.status === "error") return console.error("Ошибка:", data.error);
-
-    // Changed from data.clientId to data.patientId to match Unity client
-    if (data.type === "medical_data" && data.patientId) {
-      updatePatientData(data);
-      usePatientStore.getState().updatePatients({
-        ...patients,
-        [data.patientId]: {
-          ...patients[data.patientId],
-          ...data
-        }
-      });
-    }
-
-    // Changed from data.clientId to data.patientId
-    if (data.type === "patient_disconnected" && data.patientId) {
-      handlePatientDisconnected(data.patientId);
-      const newPatients = { ...patients };
-      delete newPatients[data.patientId];
-      usePatientStore.getState().updatePatients(newPatients);
-    }
-  };
 
   const updatePatientData = (data: WebSocketMessage) => {
     const now = new Date().toISOString();
@@ -191,25 +215,6 @@ const PatientMonitoring: React.FC = () => {
         [data.patientId!]: updatedPatient
       };
     });
-  };
-
-  const handlePatientDisconnected = (patientId: string) => {
-    setPatients(prevPatients => ({
-      ...prevPatients,
-      [patientId]: {
-        ...prevPatients[patientId],
-        disconnected: true
-      }
-    }));
-
-    setTimeout(() => {
-      setPatients(prevPatients => {
-        const newPatients = { ...prevPatients };
-        delete newPatients[patientId];
-        if (selectedPatient === patientId) setSelectedPatient(null);
-        return newPatients;
-      });
-    }, 5000);
   };
 
   const getStatusText = () => {
