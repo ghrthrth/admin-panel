@@ -22,7 +22,7 @@ export const login = (data: LoginParams) => {
     code: number
     result: UserInfo
     error?: string
-  }>('http://localhost:8001/api/auth/login', data)
+  }>('http://82.202.130.86:8001/api/auth/login', data)
 }
 
 export const logout = (data: LogoutParams) => {

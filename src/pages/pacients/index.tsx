@@ -10,7 +10,7 @@ const PatientsPage = () => {
   const [editingPatient, setEditingPatient] = useState(null);
 
   const fetchPatients = () => {
-    axios.get('http://localhost:8001/api/patients')
+    axios.get('http://82.202.130.86:8001/api/patients')
       .then(res => setData(res.data))
       .catch(err => console.error('Ошибка загрузки пациентов:', err));
   };
@@ -29,7 +29,7 @@ const PatientsPage = () => {
   };
 
   const handleDelete = async (id: number) => {
-    await axios.delete(`http://localhost:8001/api/patients/${id}`);
+    await axios.delete(`http://82.202.130.86:8001/api/patients/${id}`);
     message.success('Пациент удален');
     fetchPatients();
   };
@@ -44,10 +44,10 @@ const PatientsPage = () => {
       let response;
       if (editingPatient) {
         // @ts-ignore
-        response = await axios.put(`http://localhost:8001/api/patients/${editingPatient.id}`, payload);
+        response = await axios.put(`http://82.202.130.86:8001/api/patients/${editingPatient.id}`, payload);
         message.success('Пациент обновлен');
       } else {
-        response = await axios.post('http://localhost:8001/api/patients', payload);
+        response = await axios.post('http://82.202.130.86:8001/api/patients', payload);
         message.success(`Пациент добавлен. Код приглашения: ${response.data.invitation_code}`);
       }
 

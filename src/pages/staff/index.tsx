@@ -20,7 +20,7 @@ interface MedicalStaff {
   created_at?: string;
 }
 
-const API_URL = 'http://localhost:8001/api/staff';
+const API_URL = 'http://82.202.130.86:8001/api/staff';
 
 const StaffPage = () => {
   const { formatMessage } = useLocale();

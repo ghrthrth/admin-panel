@@ -44,7 +44,7 @@ const Dashboard: React.FC = () => {
   });
 
   useEffect(() => {
-    const socket = new WebSocket('ws://localhost:3000');
+    const socket = new WebSocket('ws://82.202.130.86:3000');
 
     socket.onopen = () => {
       setSocketStatus('connected');

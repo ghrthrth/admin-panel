@@ -65,7 +65,7 @@ const PatientMonitoring: React.FC = () => {
 
   const connectWebSocket = () => {
     setLoading(true);
-    ws.current = new WebSocket('ws://localhost:3000');
+    ws.current = new WebSocket('ws://82.202.130.86:3000');
 
     ws.current.onopen = () => {
       setConnectionStatus('connected');
