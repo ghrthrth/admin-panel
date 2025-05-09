@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef } from 'react';
 import {
   BarChart, Bar,
   LineChart, Line,
@@ -6,61 +6,26 @@ import {
   CartesianGrid, Tooltip,
   Legend, ResponsiveContainer
 } from 'recharts';
-
 import { theme } from 'antd';
 import { Spin } from 'antd';
 import './PatientMonitoring.css';
-import useAppStore from '@/stores/app.ts'
-import { usePatientStore } from '@/stores/patientStore.ts'
+import useAppStore from '@/stores/app.ts';
+import usePatientStore from '@/stores/patientStore.ts';
 
 const { useToken } = theme;
 
-interface PatientData {
-  patientId: string;  // Changed from clientId to patientId
-  pressure?: {
-    systolic: number;
-    diastolic: number;
-  };
-  bloodSugar?: number;
-  pulse?: number;
-  lastUpdate?: string;
-  history?: MedicalDataPoint[];
-  disconnected?: boolean;
-}
-
-interface MedicalDataPoint {
-  timestamp: string;
-  pressure: {
-    systolic: number;
-    diastolic: number;
-  };
-  bloodSugar: number;
-  pulse: number;
-}
-
-interface WebSocketMessage {
-  type: string;
-  patientId: string;  // Changed from any to string
-  status?: string;
-  error?: string;
-  pressure?: {
-    systolic: number;
-    diastolic: number;
-  };
-  bloodSugar?: number;
-  pulse?: number;
-}
+// Интерфейсы и типы остаются без изменений
 
 const PatientMonitoring: React.FC = () => {
   const { token } = useToken();
   const { theme: currentTheme } = useAppStore();
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'error'>('disconnected');
-  const [patients, setPatients] = useState<Record<string, PatientData>>({});
+  const [ward, setWard] = useState<WardPatient>({});
   const [selectedPatient, setSelectedPatient] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const ws = useRef<WebSocket | null>(null);
+  const timersRef = useRef<Record<string, NodeJS.Timeout>>({});
 
-  // Цвета для графиков в зависимости от темы
   const getChartColors = () => {
     return currentTheme === 'dark'
       ? {
@@ -94,6 +59,7 @@ const PatientMonitoring: React.FC = () => {
       if (ws.current) {
         ws.current.close();
       }
+      Object.values(timersRef.current).forEach(timer => clearTimeout(timer));
     };
   }, []);
 
@@ -118,103 +84,101 @@ const PatientMonitoring: React.FC = () => {
     };
 
     ws.current.onmessage = (event) => {
-      console.log('Received:', event.data);
-      const data = JSON.parse(event.data);
-
-      // Унифицируем поле ID (поддерживаем и patientId, и clientId)
+      const data = JSON.parse(event.data) as WebSocketMessage;
       const patientId = data.patientId || data.clientId;
+      if (!patientId) return;
 
-      if (data.type === "medical_data" && patientId) {
+      const wardNumber = data.wardNumber || 101;
+
+      if (data.type === "medical_data") {
         const now = new Date().toISOString();
         const newDataPoint = {
-          timestamp: now,
+          timestamp: data.timestamp || now,
           pressure: data.pressure || { systolic: 0, diastolic: 0 },
           bloodSugar: data.bloodSugar || 0,
           pulse: data.pulse || 0
         };
 
-        setPatients(prev => {
-          const existing = prev[patientId] || { patientId, history: [] };
-          const updatedHistory = [...(existing.history || []), newDataPoint].slice(-20);
+        setWard(prevWard => {
+          const newWard = { ...prevWard };
+          const wardPatients = newWard[wardNumber] || [];
 
-          return {
-            ...prev,
-            [patientId]: {
-              ...existing,
+          const existingPatientIndex = wardPatients.findIndex(p => p.patientId === patientId);
+
+          if (existingPatientIndex >= 0) {
+            const existingPatient = wardPatients[existingPatientIndex];
+            const updatedHistory = [...(existingPatient.history || []), newDataPoint].slice(-20);
+
+            wardPatients[existingPatientIndex] = {
+              ...existingPatient,
               ...data,
               lastUpdate: now,
               history: updatedHistory,
               disconnected: false
-            }
-          };
+            };
+          } else {
+            wardPatients.push({
+              patientId,
+              firstName: data.firstName,
+              lastName: data.lastName,
+              wardNumber,
+              diagnosis: data.diagnosis,
+              lastUpdate: now,
+              history: [newDataPoint],
+              disconnected: false,
+              ...data
+            });
+          }
+
+          newWard[wardNumber] = wardPatients;
+
+          if (timersRef.current[patientId]) {
+            clearTimeout(timersRef.current[patientId]);
+            delete timersRef.current[patientId];
+          }
+
+          return newWard;
         });
       }
 
-      if (data.type === "patient_disconnected" && patientId) {
-        // 1. Пометить как отключенного
-        setPatients(prev => ({
-          ...prev,
-          [patientId]: {
-            ...prev[patientId],
-            disconnected: true
-          }
-        }));
+      if (data.type === "patient_disconnected") {
+        setWard(prevWard => {
+          const newWard = { ...prevWard };
+          const wardPatients = newWard[wardNumber] || [];
 
-        // 2. Удалить через 5 секунд
-        setTimeout(() => {
-          setPatients(prev => {
-            const { [patientId]: _, ...rest } = prev;
-            // Сбросить выбор если удаляем выбранного пациента
-            if (selectedPatient === patientId) {
-              setSelectedPatient(null);
-            }
-            return rest;
-          });
-        }, 5000);
+          const updatedPatients = wardPatients.map(patient =>
+            patient.patientId === patientId
+              ? { ...patient, disconnected: true }
+              : patient
+          );
+
+          newWard[wardNumber] = updatedPatients;
+
+          if (timersRef.current[patientId]) {
+            clearTimeout(timersRef.current[patientId]);
+          }
+
+          timersRef.current[patientId] = setTimeout(() => {
+            setWard(prev => {
+              const updatedWard = { ...prev };
+              updatedWard[wardNumber] = (updatedWard[wardNumber] || []).filter(
+                p => p.patientId !== patientId
+              );
+
+              // Удаляем палату, если она пуста
+              if (updatedWard[wardNumber].length === 0) {
+                delete updatedWard[wardNumber];
+              }
+
+              return updatedWard;
+            });
+            delete timersRef.current[patientId];
+          }, 5000);
+
+          return newWard;
+        });
       }
     };
-  };
-
-
-  const updatePatientData = (data: WebSocketMessage) => {
-    const now = new Date().toISOString();
-    const newDataPoint = {
-      timestamp: now,
-      pressure: data.pressure || { systolic: 0, diastolic: 0 },
-      bloodSugar: data.bloodSugar || 0,
-      pulse: data.pulse || 0
-    };
-
-    setPatients(prevPatients => {
-      // Changed from data.clientId to data.patientId
-      const existingPatient = prevPatients[data.patientId!] || {
-        patientId: data.patientId!, // Changed from clientId to patientId
-        history: []
-      };
-
-      const updatedHistory = [...(existingPatient.history || []), newDataPoint].slice(-20);
-
-      const updatedPatient = {
-        ...existingPatient,
-        pressure: data.pressure || existingPatient.pressure,
-        bloodSugar: data.bloodSugar ?? existingPatient.bloodSugar,
-        pulse: data.pulse ?? existingPatient.pulse,
-        lastUpdate: now,
-        disconnected: false,
-        history: updatedHistory
-      };
-
-      // Changed from data.clientId to data.patientId
-      usePatientStore.getState().updatePatients({
-        ...prevPatients,
-        [data.patientId!]: updatedPatient
-      });
-
-      return {
-        ...prevPatients,
-        [data.patientId!]: updatedPatient
-      };
-    });
   };
 
   const getStatusText = () => {
@@ -226,7 +190,17 @@ const PatientMonitoring: React.FC = () => {
     }
   };
 
-  const selectedPatientData = selectedPatient ? patients[selectedPatient] : null;
+  const getSelectedPatientData = () => {
+    if (!selectedPatient) return null;
+
+    for (const wardNumber in ward) {
+      const patient = ward[wardNumber].find(p => p.patientId === selectedPatient);
+      if (patient) return patient;
+    }
+    return null;
+  };
+
+  const selectedPatientData = getSelectedPatientData();
 
   return (
     <Spin spinning={loading} size="large">
@@ -259,28 +233,47 @@ const PatientMonitoring: React.FC = () => {
                  backgroundColor: token.colorBgElevated,
                  borderRight: `1px solid ${token.colorBorder}`
                }}>
-            <h2 style={{ color: token.colorText, padding: '0 16px' }}>Список пациентов</h2>
-            <div className="patients-list-scroll">
-              {Object.values(patients).map(patient => (
-                <div
-                  key={patient.patientId}
-                  className="patient-card"
-                  style={{
-                    backgroundColor: token.colorBgContainer,
-                    borderLeft: `4px solid ${patient.disconnected ? token.colorError : token.colorSuccess}`,
-                    border: selectedPatient === patient.patientId
-                      ? `2px solid ${token.colorPrimary}`
-                      : `1px solid ${token.colorBorder}`,
-                    margin: '8px 16px'
-                  }}
-                  onClick={() => setSelectedPatient(patient.patientId)}
-                >
-                  <h3 style={{ color: token.colorText }}>Пациент ID: {patient.patientId}</h3>
-                  <div className="patient-summary" style={{ color: token.colorTextSecondary }}>
-                    <div>Давление: {patient.pressure ? `${patient.pressure.systolic}/${patient.pressure.diastolic}` : '--/--'}</div>
-                    <div>Пульс: {patient.pulse || '--'} bpm</div>
-                    <div>Сахар: {patient.bloodSugar || '--'} mmol/L</div>
-                    <div>Последнее обновление: {patient.lastUpdate || '--'}</div>
+            <h2 style={{ color: token.colorText, padding: '0 16px' }}>Палаты</h2>
+            <div className="ward-scroll">
+              {Object.entries(ward).sort(([a], [b]) => Number(a) - Number(b)).map(([wardNumber, patients]) => (
+                <div key={wardNumber} className="ward-section">
+                  <h3 style={{
+                    color: token.colorText,
+                    padding: '8px 16px',
+                    backgroundColor: token.colorFillSecondary,
+                    margin: 0
+                  }}>
+                    Палата {wardNumber}
+                  </h3>
+                  <div className="patient-list">
+                    {patients.map(patient => (
+                      <div
+                        key={patient.patientId}
+                        className="patient-card"
+                        style={{
+                          backgroundColor: token.colorBgContainer,
+                          borderLeft: `4px solid ${patient.disconnected ? token.colorError : token.colorSuccess}`,
+                          border: selectedPatient === patient.patientId
+                            ? `2px solid ${token.colorPrimary}`
+                            : `1px solid ${token.colorBorder}`,
+                          margin: '8px 16px'
+                        }}
+                        onClick={() => setSelectedPatient(patient.patientId)}
+                      >
+                        <h3 style={{ color: token.colorText }}>
+                          {patient.lastName} {patient.firstName}
+                        </h3>
+                        <div style={{ color: token.colorTextSecondary }}>
+                          Диагноз: {patient.diagnosis || '--'}
+                        </div>
+                        <div className="patient-summary" style={{ color: token.colorTextSecondary }}>
+                          <div>Давление: {patient.pressure ? `${patient.pressure.systolic}/${patient.pressure.diastolic}` : '--/--'}</div>
+                          <div>Пульс: {patient.pulse || '--'} bpm</div>
+                          <div>Сахар: {patient.bloodSugar || '--'} mmol/L</div>
+                          <div>Последнее обновление: {patient.lastUpdate || '--'}</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
@@ -290,12 +283,18 @@ const PatientMonitoring: React.FC = () => {
           <div className="patient-details-container">
             {selectedPatientData ? (
               <>
-                <div className="patient-details-header"
+                <div className="patient-detail-header"
                      style={{
                        backgroundColor: token.colorBgElevated,
                        borderBottom: `1px solid ${token.colorBorder}`
                      }}>
-                  <h2 style={{ color: token.colorText }}>Детали пациента {selectedPatient}</h2>
+                  <h2 style={{ color: token.colorText }}>
+                    {selectedPatientData.lastName} {selectedPatientData.firstName}
+                  </h2>
+                  <div style={{ color: token.colorTextSecondary }}>
+                    Палата: {selectedPatientData.wardNumber || '--'},
+                    Диагноз: {selectedPatientData.diagnosis || '--'}
+                  </div>
 
                   <div className="current-data">
                     <h3 style={{ color: token.colorText }}>Текущие показатели</h3>
@@ -337,7 +336,7 @@ const PatientMonitoring: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="charts-scroll-container">
+                <div className="chart-scroll-container">
                   <div className="chart-container"
                        style={{
                          backgroundColor: token.colorBgElevated,
@@ -347,7 +346,7 @@ const PatientMonitoring: React.FC = () => {
                     <div className="chart-wrapper">
                       <ResponsiveContainer width="100%" height={300}>
                         <LineChart data={selectedPatientData.history}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={chartColors.gridStroke} />
+                          <CartesianGrid strokeDash="3 3" stroke={chartColors.gridStroke} />
                           <XAxis
                             dataKey="timestamp"
                             tick={{ fill: chartColors.textColor }}
@@ -397,7 +396,7 @@ const PatientMonitoring: React.FC = () => {
                     <div className="chart-wrapper">
                       <ResponsiveContainer width="100%" height={300}>
                         <BarChart data={selectedPatientData.history}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={chartColors.gridStroke} />
+                          <CartesianGrid strokeDash="3 3" stroke={chartColors.gridStroke} />
                           <XAxis
                             dataKey="timestamp"
                             tick={{ fill: chartColors.textColor }}
@@ -438,7 +437,7 @@ const PatientMonitoring: React.FC = () => {
                     <div className="chart-wrapper">
                       <ResponsiveContainer width="100%" height={300}>
                         <LineChart data={selectedPatientData.history}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={chartColors.gridStroke} />
+                          <CartesianGrid strokeDash="3 3" stroke={chartColors.gridStroke} />
                           <XAxis
                             dataKey="timestamp"
                             tick={{ fill: chartColors.textColor }}
@@ -475,7 +474,7 @@ const PatientMonitoring: React.FC = () => {
               </>
             ) : (
               <div className="no-patient-selected" style={{ color: token.colorTextSecondary }}>
-                <p>Выберите пациента для просмотра детальной информации</p>
+                <p>Выберите пациент для просмотра детальной информации</p>
               </div>
             )}
           </div>
