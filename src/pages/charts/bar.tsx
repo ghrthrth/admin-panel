@@ -6,7 +6,7 @@ import {
   CartesianGrid, Tooltip,
   Legend, ResponsiveContainer
 } from 'recharts';
-import { theme } from 'antd';
+import { theme, notification } from 'antd';
 import { Spin } from 'antd';
 import './PatientMonitoring.css';
 import useAppStore from '@/stores/app.ts';
@@ -14,7 +14,49 @@ import usePatientStore from '@/stores/patientStore.ts';
 
 const { useToken } = theme;
 
-// Интерфейсы и типы остаются без изменений
+interface Pressure {
+  systolic: number;
+  diastolic: number;
+}
+
+interface HistoryItem {
+  timestamp: string;
+  pressure: Pressure;
+  bloodSugar: number;
+  pulse: number;
+}
+
+interface Patient {
+  patientId: string;
+  firstName: string;
+  lastName: string;
+  wardNumber: number;
+  diagnosis?: string;
+  pressure?: Pressure;
+  bloodSugar?: number;
+  pulse?: number;
+  lastUpdate?: string;
+  history: HistoryItem[];
+  disconnected?: boolean;
+}
+
+interface WardPatient {
+  [wardNumber: string]: Patient[];
+}
+
+interface WebSocketMessage {
+  type: string;
+  patientId?: string;
+  clientId?: string;
+  wardNumber?: number;
+  firstName?: string;
+  lastName?: string;
+  diagnosis?: string;
+  pressure?: Pressure;
+  bloodSugar?: number;
+  pulse?: number;
+  timestamp?: string;
+}
 
 const PatientMonitoring: React.FC = () => {
   const { token } = useToken();
@@ -63,9 +105,107 @@ const PatientMonitoring: React.FC = () => {
     };
   }, []);
 
+  const removePatientFromWard = (patientId: string, wardNumber: string) => {
+    setWard(prevWard => {
+      const newWard = { ...prevWard };
+      if (!newWard[wardNumber]) return prevWard;
+
+      newWard[wardNumber] = newWard[wardNumber].filter(p => p.patientId !== patientId);
+
+      if (newWard[wardNumber].length === 0) {
+        delete newWard[wardNumber];
+      }
+
+      return newWard;
+    });
+  };
+
+  const handlePatientDisconnected = (data: WebSocketMessage) => {
+    const patientId = data.patientId || data.clientId;
+    if (!patientId) return;
+
+    // Получаем актуальный номер палаты из текущего состояния
+    let actualWardNumber = '101';
+    for (const wardNum in ward) {
+      if (ward[wardNum].some(p => p.patientId === patientId)) {
+        actualWardNumber = wardNum;
+        break;
+      }
+    }
+
+    notification.warning({
+      message: `Пациент отключается`,
+      description: `Пациент ${patientId} будет удален через 5 секунд`,
+      duration: 3
+    });
+
+    // Помечаем пациента как отключенного
+    setWard(prevWard => {
+      const newWard = { ...prevWard };
+      if (!newWard[actualWardNumber]) {
+        console.error(`Ward ${actualWardNumber} not found for patient ${patientId}`);
+        return prevWard;
+      }
+
+      newWard[actualWardNumber] = newWard[actualWardNumber].map(patient =>
+        patient.patientId === patientId
+          ? { ...patient, disconnected: true }
+          : patient
+      );
+
+      return newWard;
+    });
+
+    // Устанавливаем таймер на удаление
+    if (timersRef.current[patientId]) {
+      clearTimeout(timersRef.current[patientId]);
+    }
+
+    timersRef.current[patientId] = setTimeout(() => {
+      setWard(prevWard => {
+        // Создаем полную копию состояния
+        const newWard = { ...prevWard };
+
+        // Ищем палату, где находится пациент
+        let wardToUpdate = actualWardNumber;
+        if (!newWard[wardToUpdate]) {
+          // Если в указанной палате нет, ищем в других
+          for (const wardNum in newWard) {
+            if (newWard[wardNum].some(p => p.patientId === patientId)) {
+              wardToUpdate = wardNum;
+              break;
+            }
+          }
+        }
+
+        if (!newWard[wardToUpdate]) {
+          console.error(`Patient ${patientId} not found in any ward`);
+          return prevWard;
+        }
+
+        // Фильтруем пациентов
+        newWard[wardToUpdate] = newWard[wardToUpdate].filter(
+          p => p.patientId !== patientId
+        );
+
+        // Если палата пуста - удаляем
+        if (newWard[wardToUpdate].length === 0) {
+          delete newWard[wardToUpdate];
+        }
+
+        return newWard;
+      });
+
+      // Сбрасываем выбор если это выбранный пациент
+      setSelectedPatient(prev => prev === patientId ? null : prev);
+
+      delete timersRef.current[patientId];
+    }, 5000);
+  };
+
   const connectWebSocket = () => {
     setLoading(true);
-    ws.current = new WebSocket('ws://82.202.130.86:3000');
+    ws.current = new WebSocket('wss://decadances.store/ws/');
 
     ws.current.onopen = () => {
       setConnectionStatus('connected');
@@ -88,7 +228,7 @@ const PatientMonitoring: React.FC = () => {
       const patientId = data.patientId || data.clientId;
       if (!patientId) return;
 
-      const wardNumber = data.wardNumber || 101;
+      const wardNumber = data.wardNumber ? data.wardNumber.toString() : '101';
 
       if (data.type === "medical_data") {
         const now = new Date().toISOString();
@@ -107,7 +247,7 @@ const PatientMonitoring: React.FC = () => {
 
           if (existingPatientIndex >= 0) {
             const existingPatient = wardPatients[existingPatientIndex];
-            const updatedHistory = [...(existingPatient.history || []), newDataPoint].slice(-20);
+            const updatedHistory = [...(existingPatient.history || []), newDataPoint].slice(-50);
 
             wardPatients[existingPatientIndex] = {
               ...existingPatient,
@@ -119,10 +259,10 @@ const PatientMonitoring: React.FC = () => {
           } else {
             wardPatients.push({
               patientId,
-              firstName: data.firstName,
-              lastName: data.lastName,
-              wardNumber,
-              diagnosis: data.diagnosis,
+              firstName: data.firstName || 'Unknown',
+              lastName: data.lastName || 'Patient',
+              wardNumber: Number(wardNumber),
+              diagnosis: data.diagnosis || 'No diagnosis',
               lastUpdate: now,
               history: [newDataPoint],
               disconnected: false,
@@ -139,44 +279,8 @@ const PatientMonitoring: React.FC = () => {
 
           return newWard;
         });
-      }
-
-      if (data.type === "patient_disconnected") {
-        setWard(prevWard => {
-          const newWard = { ...prevWard };
-          const wardPatients = newWard[wardNumber] || [];
-
-          const updatedPatients = wardPatients.map(patient =>
-            patient.patientId === patientId
-              ? { ...patient, disconnected: true }
-              : patient
-          );
-
-          newWard[wardNumber] = updatedPatients;
-
-          if (timersRef.current[patientId]) {
-            clearTimeout(timersRef.current[patientId]);
-          }
-
-          timersRef.current[patientId] = setTimeout(() => {
-            setWard(prev => {
-              const updatedWard = { ...prev };
-              updatedWard[wardNumber] = (updatedWard[wardNumber] || []).filter(
-                p => p.patientId !== patientId
-              );
-
-              // Удаляем палату, если она пуста
-              if (updatedWard[wardNumber].length === 0) {
-                delete updatedWard[wardNumber];
-              }
-
-              return updatedWard;
-            });
-            delete timersRef.current[patientId];
-          }, 5000);
-
-          return newWard;
-        });
+      } else if (data.type === "patient_disconnected") {
+        handlePatientDisconnected(data);
       }
     };
   };
@@ -336,20 +440,31 @@ const PatientMonitoring: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="chart-scroll-container">
+                <div className="chart-scroll-container"
+                     style={{
+                       height: 'calc(100vh - 300px)',
+                       overflowY: 'auto',
+                       paddingRight: '8px'
+                     }}>
                   <div className="chart-container"
                        style={{
                          backgroundColor: token.colorBgElevated,
-                         boxShadow: token.boxShadow
+                         boxShadow: token.boxShadow,
+                         height: '350px',
+                         marginBottom: '24px'
                        }}>
                     <h4 style={{ color: token.colorText }}>Артериальное давление</h4>
-                    <div className="chart-wrapper">
-                      <ResponsiveContainer width="100%" height={300}>
+                    <div className="chart-wrapper" style={{ height: '300px' }}>
+                      <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={selectedPatientData.history}>
                           <CartesianGrid strokeDash="3 3" stroke={chartColors.gridStroke} />
                           <XAxis
                             dataKey="timestamp"
-                            tick={{ fill: chartColors.textColor }}
+                            tick={{ fill: chartColors.textColor, angle: -45, fontSize: 12 }}
+                            tickFormatter={(value) => {
+                              const date = new Date(value);
+                              return `${date.getHours()}:${date.getMinutes()}`;
+                            }}
                           />
                           <YAxis
                             label={{
@@ -390,16 +505,22 @@ const PatientMonitoring: React.FC = () => {
                   <div className="chart-container"
                        style={{
                          backgroundColor: token.colorBgElevated,
-                         boxShadow: token.boxShadow
+                         boxShadow: token.boxShadow,
+                         height: '350px',
+                         marginBottom: '24px'
                        }}>
                     <h4 style={{ color: token.colorText }}>Пульс</h4>
-                    <div className="chart-wrapper">
-                      <ResponsiveContainer width="100%" height={300}>
+                    <div className="chart-wrapper" style={{ height: '300px' }}>
+                      <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={selectedPatientData.history}>
                           <CartesianGrid strokeDash="3 3" stroke={chartColors.gridStroke} />
                           <XAxis
                             dataKey="timestamp"
-                            tick={{ fill: chartColors.textColor }}
+                            tick={{ fill: chartColors.textColor, angle: -45, fontSize: 12 }}
+                            tickFormatter={(value) => {
+                              const date = new Date(value);
+                              return `${date.getHours()}:${date.getMinutes()}`;
+                            }}
                           />
                           <YAxis
                             label={{
@@ -431,16 +552,22 @@ const PatientMonitoring: React.FC = () => {
                   <div className="chart-container"
                        style={{
                          backgroundColor: token.colorBgElevated,
-                         boxShadow: token.boxShadow
+                         boxShadow: token.boxShadow,
+                         height: '350px',
+                         marginBottom: '24px'
                        }}>
                     <h4 style={{ color: token.colorText }}>Уровень сахара в крови</h4>
-                    <div className="chart-wrapper">
-                      <ResponsiveContainer width="100%" height={300}>
+                    <div className="chart-wrapper" style={{ height: '300px' }}>
+                      <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={selectedPatientData.history}>
                           <CartesianGrid strokeDash="3 3" stroke={chartColors.gridStroke} />
                           <XAxis
                             dataKey="timestamp"
-                            tick={{ fill: chartColors.textColor }}
+                            tick={{ fill: chartColors.textColor, angle: -45, fontSize: 12 }}
+                            tickFormatter={(value) => {
+                              const date = new Date(value);
+                              return `${date.getHours()}:${date.getMinutes()}`;
+                            }}
                           />
                           <YAxis
                             label={{
